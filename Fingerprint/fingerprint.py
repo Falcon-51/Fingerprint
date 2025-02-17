@@ -1,9 +1,10 @@
 import cv2
 import numpy as np
-
+import os
+import tqdm
 """Список работ:
-1) Интерфейс - gradio
-2) Предобработка фото
+1) Интерфейс - gradio +
+2) Предобработка фото 
 3) Проверка размеров входных картинок
 4) Извлечение фич (муниции) - почитать про отпечатки пальцев
 5) Хранение отпечатков
@@ -22,26 +23,56 @@ https://www.kaggle.com/code/kairess/fingerprint-recognition
 
 class FingerprintDetector:
 
-    def __init__(self, template_path:str="base/2.png" ):
-        
 
-        template_img = self.preprocess_image(template_path)
-
-        if template_img is None:
-            return
-        self.template_features = self.extract_features(template_img)
-        
-        
-
-    # 1.  Функции обработки изображений:
-
-    def preprocess_image(self, image_path:str):
+    def __init__(self, templates_path:str="base") -> None:
         """
-        Предварительная обработка изображения отпечатка пальца:
-        - Преобразование в оттенки серого
-        - Бинаризация (преобразование в черно-белое изображение)
-        - Улучшение контраста
+        Описание:
+        -
+        - Заполняет базу отпечатков пальец, извлекает особенности.
+        
+        Параметры:
+        -
+        - templates_path: str: Путь до директории с фото.
+
+        Возвращает:
+        -
+        - None. 
         """
+
+        self.base_images = []
+        self.base_features = []
+        self.sift = cv2.SIFT_create()
+        print("Предобработка базы фото.")
+        for filename in tqdm.tqdm(os.listdir(templates_path)):
+            filepath = os.path.join(templates_path, filename)
+            if os.path.isfile(filepath):
+                # Проверяем, является ли файл изображением (по расширению)
+                if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')): 
+                    self.base_images.append((self.preprocess_image(filepath), filename))
+        
+        self.extract_features()
+        
+
+
+
+    def preprocess_image(self, image_path:str) -> np.ndarray:
+        """
+        Описание:
+        -
+        - Предварительная обработка фото.
+        
+        Параметры:
+        -
+        - image_path: str: Путь до фото. 
+
+        Возвращает:
+        -
+        - np.ndarray. 
+        """
+
+        #TODO
+        # Причесать, улучшить, сделать так, чтобы изображение стало чётче и "выразительнее"
+
         img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             print(f"Ошибка: Не удалось загрузить изображение {image_path}")
@@ -54,35 +85,126 @@ class FingerprintDetector:
         # Бинаризация (Otsu's thresholding)
         _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Инвертируем цвета (отпечаток должен быть черным на белом фоне)
-        img = cv2.bitwise_not(img)
+        # # Инвертируем цвета (отпечаток должен быть черным на белом фоне)
+        # img = cv2.bitwise_not(img)
 
         return img
+    
 
 
 
-
-    def extract_features(self, img):
+    def extract_features(self):
         """
-        Извлечение ключевых особенностей (минуций) из отпечатка пальца.
-        В этом упрощенном примере, просто возвращает изображение как "вектор признаков".
-        В реальных системах здесь используются более сложные алгоритмы (например, анализ хребтов, окончаний и разветвлений).
+        Описание:
+        -
+        -Получение ключевых точек на изображении.
+        
+        Параметры:
+        -
+        - None. 
+
+        Возвращает:
+        -
+        - None. 
         """
-        # TODO:  Заменить на более сложный алгоритм извлечения минуций.
-        # Например, можно попробовать скелетизацию (thinning) и затем анализ точек ветвления и окончаний.
-        return img
+        print("Получение ключевых точек на фото из базы.")
+        # Проходим по изображениями и находим ключевые точки
+        for image in tqdm.tqdm(self.base_images): 
+            keypoints_2, descriptors_2 = self.sift.detectAndCompute(image[0], None)
+            self.base_features.append((keypoints_2, descriptors_2))
 
 
+    
 
-
-    # 2.  Функция сравнения отпечатков:
-
-    def match_fingerprints(self, template_features, input_features, threshold=0.9):
+    def SIFT_match(self, image:np.ndarray, threshold:float=0.95) -> tuple | None:
         """
-        Сравнение двух отпечатков пальцев на основе извлеченных признаков.
-        В этом примере, просто сравнивает изображения с использованием корреляции.
-        В реальных системах используется более сложный анализ соответствия минуций.
+        Описание:
+        -
+        -Поиск совпадений методом SIFT.
+        
+        Параметры:
+        -
+        - image: np.ndarray : Входное изображение; 
+        - threshold: float : Порог.
+
+        Возвращает:
+        -
+        - tuple | None. 
         """
+
+        img = image
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Улучшение контраста (CLAHE - Contrast Limited Adaptive Histogram Equalization)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        img = clahe.apply(img)
+
+        # Бинаризация (Otsu's thresholding)
+        _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        keypoints_1, descriptors_1 = self.sift.detectAndCompute(img, None)
+
+        # FLANN parameters
+        FLANN_INDEX_KDTREE = 0
+        index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 10)
+        search_params = dict(checks=50) # or pass empty dictionary
+        flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+
+        for i, tt in enumerate(self.base_features):
+
+            matches = flann.knnMatch(descriptors_1, tt[1], k=2)
+            match_points = []
+        
+            for p, q in matches:
+                if p.distance < 0.1*q.distance:
+                    match_points.append(p)
+
+
+            keypoints = 0
+            if len(keypoints_1) <= len(tt[1]):
+                keypoints = len(keypoints_1)            
+            else:
+                keypoints = len(tt[1])
+            if (len(match_points) / keypoints) >= threshold:
+                result = cv2.drawMatches(img, keypoints_1, self.base_images[i][0], tt[0], match_points, None) 
+                result = cv2.resize(result, None, fx=2.5, fy=2.5)
+                return result, img, self.base_images[i][0], "".join(f"Match Figerprint ID:{i}; {self.base_images[i][1]} - {len(match_points) / keypoints * 100}%")
+                
+        return None, None, None, "Совпадений нет!"
+
+
+
+
+
+
+    def match_fingerprints(self, image:np.ndarray, threshold:float=0.95) -> tuple | None:
+        """
+        Описание:
+        -
+        -Поиск совпадений корреляционным методом.
+        
+        Параметры:
+        -
+        -
+
+        Возвращает:
+        -
+        - tuple | None. 
+        """
+
+        # TODO
+        # Доделать логику
+        # Здесь нужен цикл которые пробегает по self.base_images и методом ниже производит сравнение
+        # Ну и отсечь надо порогом.
+        # Изображение из базы которое совпало, изображение запрос, и текст по аналогии с методом выше
+        # По дефолту retunr None, None, "Совпадений нет!"
+        # Обрати внимание количество возвращаемых объектов здесь отличается от предыдущего метода, соответственно и другой конфиг Gradio
+
+
+
+
+
         # Преобразуем в float32 для корректной работы cv2.matchTemplate
         template_features = template_features.astype(np.float32)
         input_features = input_features.astype(np.float32)
@@ -94,26 +216,4 @@ class FingerprintDetector:
         print(f"Значение корреляции: {max_val}")
 
         return max_val >= threshold
-
-
-    # 3.  Основная программа:
-
-    def detect(self, input_path:str):
-        """
-        Сравнение отпечатков.
-        """
-
-        # 2.  Загрузка входного отпечатка пальца (для сравнения)
-        input_img = self.preprocess_image(input_path)
-        if input_img is None:
-            return
-        input_features = self.extract_features(input_img)
-
-        # 3.  Сравнение отпечатков пальцев
-        if self.match_fingerprints(self.template_features, input_features):
-            print("Отпечатки пальцев совпадают.")
-        else:
-            print("Отпечатки пальцев не совпадают.")
-
-
 
