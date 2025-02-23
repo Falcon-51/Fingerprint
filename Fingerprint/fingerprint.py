@@ -25,7 +25,7 @@ https://www.kaggle.com/code/kairess/fingerprint-recognition
 class FingerprintDetector:
 
 
-    def __init__(self, templates_path:str="base", load_base_file:bool=True, save_base_file:bool=True) -> None:
+    def __init__(self, templates_path:str="base", load_base_file:bool=True, save_base_file:bool=True, target_width:int=800, target_height:int=1200) -> None:
         """
         Описание:
         -
@@ -45,6 +45,8 @@ class FingerprintDetector:
         self.__base_images = []
         self.__base_features = []
         self.__sift = cv2.SIFT_create(nfeatures=500)
+        self.__target_width = target_width
+        self.__target_height = target_height
 
         if load_base_file:
             print("Загрузка базы фото.")
@@ -173,7 +175,6 @@ class FingerprintDetector:
 
 
 
-    # Функция для загрузки данных из файла
     def __load_data(self, filename:str="Fingerprint/base.pkl") -> tuple[list, list]:
         """
         Описание:
@@ -209,6 +210,64 @@ class FingerprintDetector:
 
 
 
+            
+    def __should_invert(self, img:np.ndarray) -> bool:
+        """
+        Определяет, нужно ли инвертировать изображение, основываясь на его фоне.
+
+        Параметры:
+        - img: np.ndarray: Исходное изображение.
+
+        Возвращает:
+        - bool: True, если изображение должно быть инвертировано, иначе False.
+        """
+        h, w = img.shape
+        corners = [img[0, 0], img[0, -1], img[-1, 0], img[-1, -1]]
+        mean_corners = np.mean(corners)
+        
+        if mean_corners > 200:
+            return False
+        
+        mean_brightness = np.mean(img)
+        
+        if mean_brightness < 100:
+            return True
+
+        return False
+    
+
+
+
+    def __resize_with_padding(self, img:np.ndarray) -> np.ndarray:
+        """
+        Приводит изображение к заданному размеру с добавлением паддинга.
+
+        Параметры:
+        - img: np.ndarray: Исходное изображение.
+        - target_size: tuple: Целевой размер изображения (ширина, высота).
+
+        Возвращает:
+        -
+        """
+        h, w = img.shape[:2]
+        target_w, target_h = (self.__target_width, self.__target_height)
+        scale = min(target_w / w, target_h / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img_resized = cv2.resize(img, (new_w, new_h))
+        
+        top = (target_h - new_h) // 2
+        bottom = target_h - new_h - top
+        left = (target_w - new_w) // 2
+        right = target_w - new_w - left
+
+        img_padded = cv2.copyMakeBorder(img_resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)
+        return img_padded
+    
+
+
+
+
     def __preprocess_image(self, image_path:str) -> np.ndarray:
         """
         Описание:
@@ -224,25 +283,24 @@ class FingerprintDetector:
         - np.ndarray. 
         """
 
-        #TODO
-        # Причесать, улучшить, сделать так, чтобы изображение стало чётче и "выразительнее"
-
         img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             print(f"Ошибка: Не удалось загрузить изображение {image_path}")
             return None
-
-        # Улучшение контраста (CLAHE - Contrast Limited Adaptive Histogram Equalization)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            
+        # 1. Улучшение контраста (CLAHE - Contrast Limited Adaptive Histogram Equalization)
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(24, 24))
         img = clahe.apply(img)
 
-        # Бинаризация (Otsu's thresholding)
+        # 2. Бинаризация (Otsu's thresholding)
         _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        # Уменьшаем размер изображения
-        # img = cv2.resize(img, (320, 240))  # Измените размер по необходимости
-        # # Инвертируем цвета (отпечаток должен быть черным на белом фоне)
-        # img = cv2.bitwise_not(img)
+         # 3. Проверка фона (если белый - инвертируем)
+        if self.__should_invert(img):
+            img = cv2.bitwise_not(img)
+
+        # 4. Приведение к единому размеру
+        #img = self.__resize_with_padding(img)
 
         return img
     
@@ -302,12 +360,16 @@ class FingerprintDetector:
         img = image
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        # Улучшение контраста (CLAHE - Contrast Limited Adaptive Histogram Equalization)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        # 1. Улучшение контраста (CLAHE - Contrast Limited Adaptive Histogram Equalization)
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(24, 24))
         img = clahe.apply(img)
 
-        # Бинаризация (Otsu's thresholding)
+        # 2. Бинаризация (Otsu's thresholding)
         _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+         # 3. Проверка фона (если белый - инвертируем)
+        if self.__should_invert(img):
+            img = cv2.bitwise_not(img)
 
         keypoints_1, descriptors_1 = self.__sift.detectAndCompute(img, None)
 
@@ -349,42 +411,90 @@ class FingerprintDetector:
 
 
 
-    def match_fingerprints(self, image:np.ndarray, threshold:float=0.95) -> tuple | None:
+    def Correlation_match(self, image:np.ndarray, threshold:float=0.95) -> tuple | None:
         """
-        Описание:
-        -
-        -Поиск совпадений корреляционным методом.
-        
+        Сравнивает заданное изображение с изображениями базы данных с использованием корреляции.
+        Если совпадение превышает порог, возвращает изображение совпадения, исходное изображение и сообщение.
+
         Параметры:
         -
-        -
+        image: np.ndarray
+            - Изображение для сравнения.
+        threshold: float, по умолчанию 0.95
+            - Порог корреляции для определения совпадения.
 
         Возвращает:
         -
-        - tuple | None. 
+        tuple | None:
+            - Кортеж с изображением совпадения, исходным изображением и сообщением о совпадении, если найдено.
+            - `None, None, "Совпадений нет!"`, если совпадений нет.
         """
+        best_score = 0
+        best_match = None
+        best_match_image = None
 
-        # TODO
-        # Доделать логику
-        # Здесь нужен цикл которые пробегает по self.__base_images и методом ниже производит сравнение
-        # Ну и отсечь надо порогом.
-        # Изображение из базы которое совпало, изображение запрос, и текст по аналогии с методом выше
-        # По дефолту retunr None, None, "Совпадений нет!"
-        # Обрати внимание количество возвращаемых объектов здесь отличается от предыдущего метода, соответственно и другой конфиг Gradio
+        img = image
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # 1. Улучшение контраста (CLAHE - Contrast Limited Adaptive Histogram Equalization)
+        clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(24, 24))
+        img = clahe.apply(img)
+
+        # 2. Бинаризация (Otsu's thresholding)
+        _, img = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+         # 3. Проверка фона (если белый - инвертируем)
+        if self.__should_invert(img):
+            img = cv2.bitwise_not(img)
+
+        #img = img.astype(np.float32)
+
+        # Преобразуем в оттенки серого, если они цветные
+        if len(img.shape) > 2:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+
+        # Преобразуем в CV_8U
+        img = img.astype(np.uint8)
+       
+
+
+        for base_image, filename in self.__base_images:
+            try:
+
+                # Преобразуем в float32 для корректной работы cv2.matchTemplate
+                base_image = base_image.astype(np.float32)
+                if len(base_image.shape) > 2:
+                    base_image = cv2.cvtColor(base_image, cv2.COLOR_BGR2GRAY)
+
+                base_image = base_image.astype(np.uint8)
+
+                # Сравнение с помощью корреляции
+                result = cv2.matchTemplate(img, base_image, cv2.TM_CCOEFF_NORMED)
+                _, max_val, _, _ = cv2.minMaxLoc(result)  # Получаем максимальное значение корреляции
+
+                print(f"Значение корреляции с {filename}: {max_val}")
+
+                if max_val > best_score and max_val >= threshold:
+                    best_score = max_val
+                    best_match = filename
+                    best_match_image = base_image
+            
+            except Exception as e:
+                print(f"Ошибка при сравнении с {filename}: {e}")
+
+        if best_match:
+            return None, img, best_match_image, f"Совпадение найдено: {best_match} ({best_score * 100:.2f}%)"
+        
+        return None, None, None, "Совпадений нет!"
+        
 
 
 
 
+    def inference(self, image:np.ndarray, threshold:float=0.95, method:str="SIFT_match") -> None:
 
-        # Преобразуем в float32 для корректной работы cv2.matchTemplate
-        template_features = template_features.astype(np.float32)
-        input_features = input_features.astype(np.float32)
-
-        # Сравнение с помощью корреляции
-        result = cv2.matchTemplate(input_features, template_features, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, _ = cv2.minMaxLoc(result)  # Получаем максимальное значение корреляции
-
-        print(f"Значение корреляции: {max_val}")
-
-        return max_val >= threshold
-
+        if method == "SIFT_match":
+            return self.SIFT_match(image, threshold)
+        elif method == "Correlation_match":
+            return self.Correlation_match(image, threshold)

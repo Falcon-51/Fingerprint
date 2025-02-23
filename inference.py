@@ -13,23 +13,20 @@ def infer() -> None:
     Возвращает: None
     """
 
-    #TODO
-    #Продумай GUI.
-    #Нужен выпадающий список позволяющий выбрать метод SIFT или Корреляцию
-    #По сути условие: если метод этот то такой outputs[], другой значит и outputs другой
-    #Также нужен слайдер для threshold (порога)
-
 
     dtr = FingerprintDetector()
     # Определяем веб-интерфейс Gradio
+
     iface = gr.Interface(
-        fn=dtr.SIFT_match,  # Указываем функцию , которая будет вызываться при загрузке изображения.
+        fn=dtr.inference,  # Указываем функцию , которая будет вызываться при загрузке изображения.
         inputs=[
             gr.Image(type="numpy", label="Загруженное изображение"),  # Задаем тип входных данных.
+            gr.Slider(minimum=0, maximum=1, value=0.90, label="Порог уверенности совпадения"),  # Добавляем слайдер для регулировки порога уверенности.
+            gr.Dropdown(["Correlation_match", "SIFT_match"], label="Выберите метод сравнения", value="SIFT_match"),
         ],
         
         outputs=[
-            gr.Image(type="numpy", label="Результат"),  # Первое выходное значение - это изображение
+            gr.Image(type="numpy", label="Результат"),
             gr.Image(type="numpy", label="Запрос"), 
             gr.Image(type="numpy", label="Совпадение"),
             gr.Textbox(label="Вывод")  # Второе выходное значение - список объектов
@@ -44,7 +41,8 @@ def infer() -> None:
         allow_flagging="never"
     )
 
-    iface.launch(share=True)  
+
+    iface.launch(share=False)  
 
 
 
