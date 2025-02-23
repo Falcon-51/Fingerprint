@@ -3,23 +3,6 @@ import numpy as np
 import os
 import tqdm
 import pickle
-"""Список работ:
-1) Интерфейс - gradio +
-2) Предобработка фото 
-3) Проверка размеров входных картинок
-4) Извлечение фич (муниции) - почитать про отпечатки пальцев
-5) Хранение отпечатков
-    а. храним картинки в директории
-    б. храним в виде вектор????
-6) Методы сравнения отпечатков: хэш-суммой, расстояние Хэмминга, по узору, по особым точкам
-7) Написать класс для всей программы
-
-** Распознанование в real-time 
-https://habr.com/ru/articles/116603/
-https://github.com/kjanko/python-fingerprint-recognition/
-https://www.codespeedy.com/fingerprint-detection-in-python/
-https://www.kaggle.com/code/kairess/fingerprint-recognition
-"""
 
 
 class FingerprintDetector:
